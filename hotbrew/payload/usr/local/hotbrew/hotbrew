@@ -1,0 +1,148 @@
+#!/usr/bin/python3
+
+import logging
+import os
+from pkg_resources import parse_version
+import plistlib
+from subprocess import Popen, PIPE
+import sys
+
+
+# /opt is for Silicon and /usr/local is for Intel
+brew_paths = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']
+
+# Path to file for managed updates
+managed_updates_file = '/Library/hotbrew/managed_updates.plist'
+
+# Logging config
+logging.basicConfig(
+    format="%(asctime)s - %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %I:%M:%S %p",
+    level=logging.DEBUG,
+    filename=os.path.expanduser('~/Library/Logs/hotbrew.log'),
+)
+
+
+def validate_brew():
+    '''
+    Double-checks that brew is installed and executable
+    '''
+    global brew
+    brew = None
+
+    # Loop through the two and exit when you've found one that exists
+    for brew_path in brew_paths:
+        if os.path.isfile(brew_path):
+            brew = brew_path
+            logging.info(f'{brew} is the brew path')
+            break
+
+    if not brew:
+        logging.error('Unable to find a valid brew path')
+        sys.exit(1)
+
+    if not os.access(brew, os.X_OK):
+        logging.error(f'{brew} is not executable')
+        sys.exit(1)
+
+
+def update_brew():
+    '''
+    Gets updates for brew
+    '''
+    cmd = [ brew, 'update' ]
+    proc = Popen(cmd, stdout=PIPE, stderr=PIPE, encoding='utf8')
+    out, err = proc.communicate()
+    if err:
+        logging.error(f'Unable to update brew: {err}')
+        sys.exit(1)
+    else:
+        logging.info('Updated brew')
+
+def get_managed_updates():
+    '''
+    Gets what desired versions there should be for various brew-installed apps
+    '''
+    if not os.path.isfile(managed_updates_file):
+        logging.error(f"{managed_updates_file} doesn't exist")
+        sys.exit(1)
+    try:
+        update_file = open(managed_updates_file, 'rb')
+    except:
+        logging.error(f'Unable to open {managed_updates_file}')
+        sys.exit(1)
+    try:
+        file_contents = plistlib.load(update_file)
+    except:
+        logging.error(f'Unable to get contents of {managed_updates_file}')
+        sys.exit(1)
+    update_file.close()
+    if not 'apps' in file_contents.keys():
+        logging.error(f"Can't find apps key in {file_contents}")
+        sys.exit(1)
+    if not isinstance(file_contents['apps'], list):
+        logging.error(f"{file_contents} isn't formatted correctly")
+        sys.exit(1)
+    apps = file_contents['apps']
+    return apps
+
+
+def get_installed_version(appname):
+    '''
+    Gets the installed version of a particular app
+    '''
+    cmd = [ brew, "list", "--versions", appname ]
+    proc = Popen(cmd, stdout=PIPE, stderr=PIPE, encoding='utf8')
+    out, err = proc.communicate()
+    if err:
+        logging.error(f'Unable to get app version for {appname}')
+        return None
+    else:
+        if out.strip() == '':
+            logging.warning(f"{appname} doesn't appear to be installed")
+            return None
+        else:
+            out_parts = out.split(' ')
+            if len(out_parts) != 2:
+                logging.error(f'Unable to parse version from {out}')
+                return None
+            else:
+                return out_parts[1]
+
+
+def update_apps(apps):
+    '''
+    Tries to use brew to update the apps to minimum required versions
+    '''
+    for app in apps:
+        if not isinstance(app, dict):
+            logging.error(f'{app} is not a dictionary')
+            continue
+        if not 'name' in app.keys() or not 'minimum_version' in app.keys():
+            logging.error(f"{app} doesn't have necessary keys")
+            continue
+        app_name = app['name']
+        app_minvers = app['minimum_version']
+        installed_vers = get_installed_version(app_name)
+        if installed_vers:
+            if parse_version(installed_vers) < parse_version(app_minvers):
+                logging.info(f'{app} is {installed_vers} and needs to be {app_minvers}')
+                cmd = [ brew, 'upgrade', app_name ]
+                proc = Popen(cmd, stdout=PIPE, stderr=PIPE, encoding='utf8')
+                out, err = proc.communicate()
+                if err:
+                    logging.error(f'Unable to upgrade {app_name}')
+                else:
+                    logging.info(f'Upgraded {app_name}')
+            else:
+                logging.info(f'{app_name} is already version {app_minvers}')
+
+
+def main():
+    validate_brew()
+    update_brew()
+    apps = get_managed_updates()
+    update_apps(apps)
+
+if __name__ == "__main__":
+    main()
