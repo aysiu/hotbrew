@@ -12,4 +12,4 @@ The config file should live in `/Library/hotbrew/managed_updates.plist`. You can
 ## making a package
 Use [munkipkg](https://github.com/munki/munki-pkg) to build the project. If you prefer a point-and-click custom package maker, check out [Packages](http://s.sudre.free.fr/Software/Packages/about.html), but you'll have to do some manual reconstruction of the payload and project.
 ## support?
-There is no support for this project at this time. Right now, it's honestly proof-of-concept. Hopefully it helps someone.
+There is no support for this project at this time. Right now, it's honestly proof-of-concept, but maybe people will find it useful.
